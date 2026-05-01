@@ -3,46 +3,44 @@ import WebTorrent from 'webtorrent';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// In ES Modules, we have to manually recreate __dirname
+// --- NEW FFMPEG IMPORTS ---
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const client = new WebTorrent();
+const client = new WebTorrent({ maxConns: 200, webSeeds: true });
 const PORT = 3000;
 
-// Serve frontend and parse JSON
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 let currentTorrent = null;
 
-// 1. Endpoint to add a magnet link
+const announceList = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://tracker.openbittorrent.com:80/announce",
+    "wss://tracker.openwebtorrent.com"
+];
+
 app.post('/api/add', (req, res) => {
     const { magnet } = req.body;
     if (!magnet) return res.status(400).json({ error: 'No magnet link provided' });
 
-    if (currentTorrent) {
-        currentTorrent.destroy();
-    }
+    if (currentTorrent) currentTorrent.destroy();
 
-    client.add(magnet, (torrent) => {
+    client.add(magnet, { announce: announceList }, (torrent) => {
         currentTorrent = torrent;
-        
         const file = torrent.files.find(f => f.name.endsWith('.mp4') || f.name.endsWith('.mkv') || f.name.endsWith('.webm'));
-
-        if (!file) {
-            return res.status(400).json({ error: 'No video file found.' });
-        }
-
-        res.json({
-            message: 'Ready to stream',
-            infoHash: torrent.infoHash,
-        });
+        if (!file) return res.status(400).json({ error: 'No playable video file found.' });
+        file.deselect();
+        res.json({ message: 'Ready to stream', infoHash: torrent.infoHash });
     });
 });
 
-// 2. Endpoint to stream the video to the HTML5 player
 app.get('/api/stream/:infoHash', (req, res) => {
     if (!currentTorrent || currentTorrent.infoHash !== req.params.infoHash) {
         return res.status(404).send('Torrent not found');
@@ -51,7 +49,39 @@ app.get('/api/stream/:infoHash', (req, res) => {
     const file = currentTorrent.files.find(f => f.name.endsWith('.mp4') || f.name.endsWith('.mkv') || f.name.endsWith('.webm'));
     if (!file) return res.status(404).send('File not found');
 
+    const targetRes = req.query.res; // Grabs '480', '720', or 'source'
     const range = req.headers.range;
+
+    // --- LIVE TRANSCODING LOGIC ---
+    // If the user selected a lower resolution, we intercept the stream and crush it.
+    if (targetRes && targetRes !== 'source') {
+        res.writeHead(200, { 'Content-Type': 'video/mp4' });
+        
+        // Grab the raw file stream
+        const rawStream = file.createReadStream();
+        
+        // Pipe it through FFmpeg live
+        const transcodeStream = ffmpeg(rawStream)
+            .videoCodec('libx264')
+            .size(`?x${targetRes}`) // Automatically scales width, sets height to 480 or 720
+            .outputOptions([
+                '-movflags isml+frag_keyframe+empty_moov+faststart', // Forces it to stream immediately without needing the end of the file
+                '-preset ultrafast', // Use maximum CPU speed to prevent buffering
+                '-crf 28' // Lower quality to save bandwidth
+            ])
+            .format('mp4')
+            .on('error', (err) => console.log('Transcode interrupted (usually due to seeking)'))
+            .pipe(res, { end: true });
+
+        // Clean up when the user clicks away
+        req.on('close', () => {
+            rawStream.destroy();
+            // FFmpeg will automatically die when the raw stream is destroyed
+        });
+        return;
+    }
+
+    // --- NORMAL SOURCE LOGIC (No Transcoding) ---
     if (!range) {
         res.writeHead(200, { 'Content-Length': file.length, 'Content-Type': 'video/mp4' });
         file.createReadStream().pipe(res);
@@ -70,23 +100,21 @@ app.get('/api/stream/:infoHash', (req, res) => {
         'Content-Type': 'video/mp4',
     });
 
-    file.createReadStream({ start, end }).pipe(res);
+    const stream = file.createReadStream({ start, end });
+    stream.pipe(res);
+
+    const killStream = () => { if (!stream.destroyed) stream.destroy(); };
+    stream.on('error', killStream);
+    req.on('close', killStream);
 });
 
-// 3. Endpoint to get real-time download stats for the UI
 app.get('/api/stats', (req, res) => {
+    // ... exact same stats logic from before
     if (!currentTorrent) return res.json({ status: 'idle' });
-    
     res.json({
-        status: 'downloading',
-        progress: currentTorrent.progress,
-        downloadSpeed: currentTorrent.downloadSpeed,
-        downloaded: currentTorrent.downloaded,
-        length: currentTorrent.length,
-        numPeers: currentTorrent.numPeers
+        status: 'downloading', progress: currentTorrent.progress, downloadSpeed: currentTorrent.downloadSpeed,
+        downloaded: currentTorrent.downloaded, length: currentTorrent.length, numPeers: currentTorrent.numPeers
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`Backend Streaming Engine running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Transcoding Engine running on http://localhost:${PORT}`));
