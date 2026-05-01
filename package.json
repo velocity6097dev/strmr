@@ -1,0 +1,14 @@
+{
+  "name": "torrent-stream-app",
+  "version": "1.0.0",
+  "description": "Real-time WebTorrent Streaming Player",
+  "main": "server.js",
+  "type": "module", 
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "webtorrent": "^2.1.33"
+  }
+}
