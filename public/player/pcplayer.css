@@ -1,0 +1,25 @@
+body {
+    margin: 0;
+    background-color: #000000;
+    overflow: hidden; /* Absolutely no scrolling on PC */
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+:root {
+    --plyr-color-main: #E50914; /* Red Theme */
+    --plyr-video-background: #000000;
+}
+
+#video-wrapper {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Make the video fill the wrapper perfectly */
+.plyr {
+    width: 100%;
+    height: 100%;
+}

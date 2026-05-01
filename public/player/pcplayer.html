@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desktop Stream Player</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <link rel="stylesheet" href="./pcplayer.css" />
+</head>
+<body>
+    
+    <div id="video-wrapper">
+        <video id="video-player" playsinline crossorigin>
+            <!-- 
+              Because there are no <track> tags here, the "Captions" menu will auto-hide. 
+              If you want them to appear later, inject: <track kind="captions" label="English" srclang="en" src="..." default> 
+            -->
+        </video>
+    </div>
+
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script src="./speedtest.js"></script>
+    <script src="./pcplayer.js"></script>
+</body>
+</html>
